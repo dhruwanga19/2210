@@ -1,0 +1,7 @@
+LaunchTargetManager/org.eclipse.launchbar.core.launchTargetType.local,Local/arch=x86_64
+LaunchTargetManager/org.eclipse.launchbar.core.launchTargetType.local,Local/name=Local
+LaunchTargetManager/org.eclipse.launchbar.core.launchTargetType.local,Local/os=win32
+configDescList=org.eclipse.launchbar.core.descriptorType.default\:MostTimes,org.eclipse.launchbar.core.descriptorType.default\:Prac,org.eclipse.launchbar.core.descriptorType.default\:Search
+eclipse.preferences.version=1
+org.eclipse.launchbar.core.descriptorType.default\:MostTimes/activeLaunchMode=run
+org.eclipse.launchbar.core.descriptorType.default\:MostTimes/activeLaunchTarget=org.eclipse.launchbar.core.launchTargetType.local\:Local
