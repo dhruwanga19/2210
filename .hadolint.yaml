@@ -1,0 +1,21 @@
+# hadolint configuration for Asn2/Dockerfile
+# https://github.com/hadolint/hadolint
+
+failure-threshold: error
+
+# Pin ignore list to rules that intentionally don't apply here.
+ignored:
+  # DL3008: "Pin versions in apt-get install" — this is a demo image;
+  # Trivy catches CVEs at scan time which is a stronger guarantee than
+  # pinning apt versions that go stale.
+  - DL3008
+  # DL3009: "Delete the apt-get lists after installing something" —
+  # we already do `rm -rf /var/lib/apt/lists/*` but hadolint trips on
+  # the multi-line form; keeping as an allowlist.
+  - DL3009
+
+trustedRegistries:
+  - docker.io
+  - ghcr.io
+  - public.ecr.aws
+  - quay.io

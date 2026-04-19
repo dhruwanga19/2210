@@ -1,0 +1,241 @@
+name: CI (scan → build → sign → push → bump gitops)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'Asn2/**'
+      - '.github/workflows/ci.yml'
+      - '.gitleaks.toml'
+      - '.hadolint.yaml'
+  pull_request:
+    paths:
+      - 'Asn2/**'
+      - '.github/workflows/ci.yml'
+  workflow_dispatch:
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY: asn2-game
+  # GITOPS_REPO is overridden via repo variables if the name changes
+  GITOPS_REPO: dhruwanga19/asn2-gitops
+  GITOPS_KUSTOMIZATION_PATH: clusters/prod/workloads/asn2-game/kustomization.yaml
+
+permissions:
+  contents: read      # most jobs only need read
+  id-token: write     # OIDC to AWS + Sigstore keyless signing
+
+jobs:
+  # ------------------------------------------------------------------
+  # Static security gates — fast, run in parallel, all blocking.
+  # ------------------------------------------------------------------
+  secrets-scan:
+    name: Secrets scan (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITLEAKS_CONFIG: .gitleaks.toml
+
+  sast:
+    name: Java SAST (CodeQL)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: java-kotlin
+          queries: security-and-quality
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Compile Java sources
+        working-directory: Asn2
+        run: |
+          mkdir -p bin
+          javac -d bin src/*.java
+      - uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:java-kotlin"
+
+  dockerfile-lint:
+    name: Dockerfile lint (hadolint)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: Asn2/Dockerfile
+          config: .hadolint.yaml
+          failure-threshold: error
+
+  # ------------------------------------------------------------------
+  # Build image, SBOM, scan, sign, push (only on main; PRs just build).
+  # ------------------------------------------------------------------
+  build-and-publish:
+    name: Build, scan, sign, push to ECR
+    needs: [secrets-scan, sast, dockerfile-lint]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      packages: write
+    outputs:
+      image_uri: ${{ steps.push.outputs.image_uri }}
+      image_digest: ${{ steps.push.outputs.image_digest }}
+      tag: ${{ steps.meta.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Compute image tag
+        id: meta
+        run: |
+          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          echo "tag=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+          echo "full_tag=sha-${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image (load into local daemon for scanning)
+        uses: docker/build-push-action@v6
+        with:
+          context: ./Asn2
+          load: true
+          tags: local/asn2-game:${{ steps.meta.outputs.full_tag }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Generate SBOM (syft)
+        uses: anchore/sbom-action@v0
+        with:
+          image: local/asn2-game:${{ steps.meta.outputs.full_tag }}
+          format: spdx-json
+          output-file: sbom.spdx.json
+          upload-artifact: true
+
+      - name: Vulnerability scan (Trivy, fail on HIGH+CRITICAL)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: local/asn2-game:${{ steps.meta.outputs.full_tag }}
+          format: table
+          exit-code: '1'
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          vuln-type: os,library
+
+      - name: Trivy config scan (Dockerfile + compose)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: config
+          scan-ref: Asn2
+          exit-code: '1'
+          severity: HIGH,CRITICAL
+
+      # --- Push only on main ---
+      - name: Push image to ECR
+        id: push
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+          TAG: ${{ steps.meta.outputs.full_tag }}
+        run: |
+          IMAGE_URI="${REGISTRY}/${{ env.ECR_REPOSITORY }}:${TAG}"
+          docker tag local/asn2-game:${TAG} "${IMAGE_URI}"
+          docker tag local/asn2-game:${TAG} "${REGISTRY}/${{ env.ECR_REPOSITORY }}:latest"
+          docker push "${IMAGE_URI}"
+          docker push "${REGISTRY}/${{ env.ECR_REPOSITORY }}:latest"
+          DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' "${IMAGE_URI}" | awk -F@ '{print $2}')
+          echo "image_uri=${IMAGE_URI}" >> "$GITHUB_OUTPUT"
+          echo "image_digest=${DIGEST}" >> "$GITHUB_OUTPUT"
+
+      - name: Install cosign
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: sigstore/cosign-installer@v3
+
+      - name: Sign image (keyless, Sigstore)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          COSIGN_EXPERIMENTAL: '1'
+        run: |
+          cosign sign --yes "${{ steps.push.outputs.image_uri }}@${{ steps.push.outputs.image_digest }}"
+
+      - name: Attach SBOM attestation
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          COSIGN_EXPERIMENTAL: '1'
+        run: |
+          cosign attest --yes --predicate sbom.spdx.json --type spdx \
+            "${{ steps.push.outputs.image_uri }}@${{ steps.push.outputs.image_digest }}"
+
+  # ------------------------------------------------------------------
+  # GitOps: open a PR in the asn2-gitops repo that bumps the image tag.
+  # Argo CD then syncs the cluster automatically.
+  # ------------------------------------------------------------------
+  bump-gitops:
+    name: Bump image tag in GitOps repo
+    needs: build-and-publish
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout gitops repo
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.GITOPS_REPO }}
+          token: ${{ secrets.GITOPS_PAT }}
+          path: gitops
+
+      - name: Update Kustomize image tag
+        working-directory: gitops
+        env:
+          NEW_TAG: ${{ needs.build-and-publish.outputs.tag }}
+        run: |
+          set -eu
+          # `kustomize edit set image` would work, but we avoid installing the
+          # CLI by patching YAML directly with yq (preinstalled on ubuntu-latest).
+          yq -i "(.images[] | select(.name == \"asn2-game\")).newTag = \"sha-${NEW_TAG}\"" \
+            "${{ env.GITOPS_KUSTOMIZATION_PATH }}"
+          git diff
+
+      - name: Open pull request
+        uses: peter-evans/create-pull-request@v7
+        with:
+          path: gitops
+          token: ${{ secrets.GITOPS_PAT }}
+          branch: bump-asn2-game-${{ needs.build-and-publish.outputs.tag }}
+          commit-message: |
+            Bump asn2-game image to sha-${{ needs.build-and-publish.outputs.tag }}
+          title: "Bump asn2-game image to sha-${{ needs.build-and-publish.outputs.tag }}"
+          body: |
+            Automated image bump from ${{ github.repository }}@${{ github.sha }}.
+
+            - Image: `${{ needs.build-and-publish.outputs.image_uri }}`
+            - Digest: `${{ needs.build-and-publish.outputs.image_digest }}`
+
+            Signed with cosign keyless (Sigstore). Verify with:
+            ```
+            cosign verify \
+              --certificate-identity-regexp 'https://github.com/${{ github.repository }}' \
+              --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+              ${{ needs.build-and-publish.outputs.image_uri }}@${{ needs.build-and-publish.outputs.image_digest }}
+            ```
+          labels: automated,image-bump

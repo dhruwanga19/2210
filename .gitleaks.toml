@@ -1,0 +1,17 @@
+# gitleaks configuration. Inherits the default ruleset and adds allowlists
+# for known-false-positive strings inside this academic project.
+# See https://github.com/gitleaks/gitleaks for the default rules.
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Project-wide allowlist"
+paths = [
+    '''Asn2/src/Assignment2\.pdf''',
+    '''Asn2/bin/''',
+]
+# The game stores a depth-search hash table; the keys look secret-ish to scanners.
+regexes = [
+    '''HashNode''',
+]
