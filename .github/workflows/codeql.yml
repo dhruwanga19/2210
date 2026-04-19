@@ -1,0 +1,37 @@
+name: CodeQL (scheduled, deep analysis)
+
+on:
+  schedule:
+    # Monday 03:17 UTC — offset from common top-of-hour congestion
+    - cron: '17 3 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: java-kotlin
+          queries: security-extended,security-and-quality
+
+      - name: Build Java sources
+        working-directory: Asn2
+        run: |
+          mkdir -p bin
+          javac -d bin src/*.java
+
+      - uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:java-kotlin"
