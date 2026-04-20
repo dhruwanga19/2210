@@ -7,8 +7,9 @@ on:
   workflow_dispatch:
 
 permissions:
+  actions: read           # codeql-action/analyze reads the triggering run's metadata
   contents: read
-  security-events: write
+  security-events: write  # uploads SARIF to code-scanning
 
 jobs:
   analyze:

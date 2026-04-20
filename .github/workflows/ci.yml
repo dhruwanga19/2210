@@ -44,8 +44,9 @@ jobs:
     name: Java SAST (CodeQL)
     runs-on: ubuntu-latest
     permissions:
+      actions: read           # codeql-action/analyze reads the triggering run's metadata
       contents: read
-      security-events: write
+      security-events: write  # uploads SARIF to code-scanning
     steps:
       - uses: actions/checkout@v4
       - uses: github/codeql-action/init@v3
