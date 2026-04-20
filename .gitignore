@@ -1,0 +1,8 @@
+*/.claude/*
+*/.claude-logs/*
+*/.claude-cache/*
+*/.claude-temp/*
+*/.claude-tmp/*
+*/.claude-backups/*
+*/.claude-archives/*
+*/.claude-sessions/*
