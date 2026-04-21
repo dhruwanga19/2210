@@ -178,16 +178,32 @@ jobs:
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         env:
           COSIGN_EXPERIMENTAL: "1"
+          IMAGE: ${{ steps.push.outputs.image_uri }}@${{ steps.push.outputs.image_digest }}
         run: |
-          cosign sign --yes "${{ steps.push.outputs.image_uri }}@${{ steps.push.outputs.image_digest }}"
+          # ECR has tag immutability enabled, so re-signing the same digest
+          # fails with TAG_INVALID. Skip if a signature already exists.
+          if cosign verify --certificate-identity-regexp='.*' \
+                           --certificate-oidc-issuer-regexp='.*' \
+                           "${IMAGE}" >/dev/null 2>&1; then
+            echo "Signature already exists for ${IMAGE}, skipping."
+          else
+            cosign sign --yes "${IMAGE}"
+          fi
 
       - name: Attach SBOM attestation
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         env:
           COSIGN_EXPERIMENTAL: "1"
+          IMAGE: ${{ steps.push.outputs.image_uri }}@${{ steps.push.outputs.image_digest }}
         run: |
-          cosign attest --yes --predicate sbom.spdx.json --type spdx \
-            "${{ steps.push.outputs.image_uri }}@${{ steps.push.outputs.image_digest }}"
+          if cosign verify-attestation --type spdx \
+                                       --certificate-identity-regexp='.*' \
+                                       --certificate-oidc-issuer-regexp='.*' \
+                                       "${IMAGE}" >/dev/null 2>&1; then
+            echo "SBOM attestation already exists for ${IMAGE}, skipping."
+          else
+            cosign attest --yes --predicate sbom.spdx.json --type spdx "${IMAGE}"
+          fi
 
   # ------------------------------------------------------------------
   # GitOps: open a PR in the asn2-gitops repo that bumps the image tag.
