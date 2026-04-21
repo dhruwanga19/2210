@@ -133,8 +133,9 @@ jobs:
           format: spdx-json
           output-file: sbom.spdx.json
           upload-artifact: true
+
       - name: Vulnerability scan (Trivy, fail on HIGH+CRITICAL)
-        uses: aquasecurity/trivy-action@v0
+        uses: aquasecurity/trivy-action@v0.35.0
         with:
           image-ref: local/asn2-game:${{ steps.meta.outputs.full_tag }}
           format: table
@@ -142,8 +143,9 @@ jobs:
           severity: HIGH,CRITICAL
           ignore-unfixed: true
           vuln-type: os,library
+
       - name: Trivy config scan (Dockerfile + compose)
-        uses: aquasecurity/trivy-action@v0
+        uses: aquasecurity/trivy-action@v0.35.0
         with:
           scan-type: config
           scan-ref: Asn2
