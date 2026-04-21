@@ -4,14 +4,14 @@ on:
   push:
     branches: [main]
     paths:
-      - 'Asn2/**'
-      - '.github/workflows/ci.yml'
-      - '.gitleaks.toml'
-      - '.hadolint.yaml'
+      - "Asn2/**"
+      - ".github/workflows/ci.yml"
+      - ".gitleaks.toml"
+      - ".hadolint.yaml"
   pull_request:
     paths:
-      - 'Asn2/**'
-      - '.github/workflows/ci.yml'
+      - "Asn2/**"
+      - ".github/workflows/ci.yml"
   workflow_dispatch:
 
 env:
@@ -22,8 +22,8 @@ env:
   GITOPS_KUSTOMIZATION_PATH: clusters/prod/workloads/asn2-game/kustomization.yaml
 
 permissions:
-  contents: read      # most jobs only need read
-  id-token: write     # OIDC to AWS + Sigstore keyless signing
+  contents: read # most jobs only need read
+  id-token: write # OIDC to AWS + Sigstore keyless signing
 
 jobs:
   # ------------------------------------------------------------------
@@ -44,9 +44,9 @@ jobs:
     name: Java SAST (CodeQL)
     runs-on: ubuntu-latest
     permissions:
-      actions: read           # codeql-action/analyze reads the triggering run's metadata
+      actions: read # codeql-action/analyze reads the triggering run's metadata
       contents: read
-      security-events: write  # uploads SARIF to code-scanning
+      security-events: write # uploads SARIF to code-scanning
     steps:
       - uses: actions/checkout@v4
       - uses: github/codeql-action/init@v3
@@ -56,7 +56,7 @@ jobs:
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: "17"
       - name: Compile Java sources
         working-directory: Asn2
         run: |
@@ -133,23 +133,21 @@ jobs:
           format: spdx-json
           output-file: sbom.spdx.json
           upload-artifact: true
-
       - name: Vulnerability scan (Trivy, fail on HIGH+CRITICAL)
-        uses: aquasecurity/trivy-action@0.29.0
+        uses: aquasecurity/trivy-action@v0
         with:
           image-ref: local/asn2-game:${{ steps.meta.outputs.full_tag }}
           format: table
-          exit-code: '1'
+          exit-code: "1"
           severity: HIGH,CRITICAL
           ignore-unfixed: true
           vuln-type: os,library
-
       - name: Trivy config scan (Dockerfile + compose)
-        uses: aquasecurity/trivy-action@0.29.0
+        uses: aquasecurity/trivy-action@v0
         with:
           scan-type: config
           scan-ref: Asn2
-          exit-code: '1'
+          exit-code: "1"
           severity: HIGH,CRITICAL
 
       # --- Push only on main ---
@@ -176,14 +174,14 @@ jobs:
       - name: Sign image (keyless, Sigstore)
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         env:
-          COSIGN_EXPERIMENTAL: '1'
+          COSIGN_EXPERIMENTAL: "1"
         run: |
           cosign sign --yes "${{ steps.push.outputs.image_uri }}@${{ steps.push.outputs.image_digest }}"
 
       - name: Attach SBOM attestation
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         env:
-          COSIGN_EXPERIMENTAL: '1'
+          COSIGN_EXPERIMENTAL: "1"
         run: |
           cosign attest --yes --predicate sbom.spdx.json --type spdx \
             "${{ steps.push.outputs.image_uri }}@${{ steps.push.outputs.image_digest }}"
