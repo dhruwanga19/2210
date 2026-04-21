@@ -135,7 +135,7 @@ jobs:
           upload-artifact: true
 
       - name: Vulnerability scan (Trivy, fail on HIGH+CRITICAL)
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@0.29.0
         with:
           image-ref: local/asn2-game:${{ steps.meta.outputs.full_tag }}
           format: table
@@ -145,7 +145,7 @@ jobs:
           vuln-type: os,library
 
       - name: Trivy config scan (Dockerfile + compose)
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@0.29.0
         with:
           scan-type: config
           scan-ref: Asn2
