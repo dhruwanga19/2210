@@ -151,6 +151,7 @@ jobs:
           scan-ref: Asn2
           exit-code: "1"
           severity: HIGH,CRITICAL
+          trivyignores: Asn2/.trivyignore
 
       # --- Push only on main ---
       - name: Push image to ECR

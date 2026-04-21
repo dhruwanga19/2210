@@ -1,0 +1,6 @@
+# DS-0002: Dockerfile has no top-level USER directive.
+# Intentional: supervisord must start as root so x11vnc/Xvfb can bind the
+# display socket. The JVM is launched via `gosu app` inside supervisord.conf,
+# so PlayGame runs as UID 1000 with no capabilities. Kyverno enforces
+# no-privilege-escalation at the pod level.
+AVD-DS-0002
