@@ -163,9 +163,7 @@ jobs:
         run: |
           IMAGE_URI="${REGISTRY}/${{ env.ECR_REPOSITORY }}:${TAG}"
           docker tag local/asn2-game:${TAG} "${IMAGE_URI}"
-          docker tag local/asn2-game:${TAG} "${REGISTRY}/${{ env.ECR_REPOSITORY }}:latest"
           docker push "${IMAGE_URI}"
-          docker push "${REGISTRY}/${{ env.ECR_REPOSITORY }}:latest"
           DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' "${IMAGE_URI}" | awk -F@ '{print $2}')
           echo "image_uri=${IMAGE_URI}" >> "$GITHUB_OUTPUT"
           echo "image_digest=${DIGEST}" >> "$GITHUB_OUTPUT"
