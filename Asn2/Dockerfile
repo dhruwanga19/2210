@@ -30,6 +30,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         curl \
         ca-certificates \
     && rm -rf /var/lib/apt/lists/* \
+    && (userdel -r ubuntu 2>/dev/null || true) \
     && groupadd --system --gid ${APP_GID} app \
     && useradd  --system --uid ${APP_UID} --gid app --home-dir /app --shell /usr/sbin/nologin app
 
